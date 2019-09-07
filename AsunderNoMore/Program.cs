@@ -19,13 +19,15 @@ namespace AsunderNoMore
                 return;
             }
 
-            Bigfile bigFile = new Bigfile(folderName);
-            if (!bigFile.IsValid)
+            Bigfile bigfile = new Bigfile(folderName);
+            if (!bigfile.IsValid)
             {
-                Console.WriteLine("Error: \"" + bigFile.Error + "\"");
+                Console.WriteLine("Error: \"" + bigfile.Error + "\"");
             }
 
-            Console.WriteLine("Packed \"" + Path.Combine(folderName, "bigfile.dat\""));
+            string bigfileName = Path.Combine(folderName, "bigfile.dat");
+            bigfile.CreateBigfile(bigfileName);
+            Console.WriteLine("Packed \"" + bigfileName + "\"");
         }
     }
 }
