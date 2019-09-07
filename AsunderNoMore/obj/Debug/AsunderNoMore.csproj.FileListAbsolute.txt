@@ -1,0 +1,6 @@
+C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\bin\Debug\AsunderNoMore.exe.config
+C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\bin\Debug\AsunderNoMore.exe
+C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\bin\Debug\AsunderNoMore.pdb
+C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\obj\Debug\AsunderNoMore.csproj.CoreCompileInputs.cache
+C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\obj\Debug\AsunderNoMore.exe
+C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\obj\Debug\AsunderNoMore.pdb
