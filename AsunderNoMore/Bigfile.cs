@@ -8,74 +8,160 @@ namespace AsunderNoMore
     class Bigfile
     {
         List<BigfileEntry> _bigFileEntries = new List<BigfileEntry>();
-        public bool IsValid { get; } = false;
-        public string Error { get; } = "";
+        public string Error { get; set; } = "";
 
-        public Bigfile(string folderName)
+        public Bigfile()
         {
+        }
+
+        public bool Import(string folderName, string compareFileName)
+        {
+            Error = "";
+
             try
             {
-                DirectoryInfo directoryInfo = new DirectoryInfo(folderName);
-                FileInfo[] fileInfos = directoryInfo.GetFiles("*", SearchOption.AllDirectories);
-                foreach (FileInfo fileInfo in fileInfos)
-                {
-                    string filePath = fileInfo.FullName.Substring(folderName.Length);
-                    string fileExt = Path.GetExtension(fileInfo.FullName);
-                    int endOfName = filePath.Length - fileExt.Length;
+                _bigFileEntries.Clear();
 
-                    string fileName = Path.GetFileNameWithoutExtension(fileInfo.FullName);
-                    if (fileName == "bigfile")
+                bool useCompareFile = false;// (compareFileName != "");
+                if (useCompareFile)
+                {
+                    FileStream inputFile = new FileStream(compareFileName, FileMode.Open);
+                    BinaryReader reader = new BinaryReader(inputFile);
+
+                    uint entryCount = reader.ReadUInt32();
+                    while (entryCount > 0)
                     {
-                        continue;
+                        BigfileEntry entry = new BigfileEntry();
+                        entry.FileHash = reader.ReadUInt32();
+                        entry.FileLength = reader.ReadUInt32();
+                        entry.FileOffset = reader.ReadUInt32();
+                        entry.FileCode.code = reader.ReadUInt32();
+                        _bigFileEntries.Add(entry);
+
+                        entryCount--;
                     }
 
-                    BigfileEntry bigFileEntry = new BigfileEntry();
-                    bigFileEntry.FilePath = filePath;
-                    bigFileEntry.FileHash = getSR1HashName(filePath);
-                    bigFileEntry.FileLength = (uint)fileInfo.Length;
-                    bigFileEntry.FileCode.code0 = char.ToUpperInvariant(filePath[endOfName - 4]);
-                    bigFileEntry.FileCode.code1 = char.ToUpperInvariant(filePath[endOfName - 3]);
-                    bigFileEntry.FileCode.code2 = char.ToUpperInvariant(filePath[endOfName - 2]);
-                    bigFileEntry.FileCode.code3 = char.ToUpperInvariant(filePath[endOfName - 1]);
-                    _bigFileEntries.Add(bigFileEntry);
+                    reader.Close();
+                    inputFile.Close();
                 }
 
-                IsValid = true;
+                DirectoryInfo directoryInfo = new DirectoryInfo(folderName);
+                FileInfo[] fileInfos = directoryInfo.GetFiles("*", SearchOption.AllDirectories);
+
+                if (fileInfos.Length <= 0)
+                {
+                    throw new Exception("No files in \"" + folderName + "\".");
+                }
+
+                foreach (FileInfo fileInfo in fileInfos)
+                {
+                    string relativePath = fileInfo.FullName.Substring(Directory.GetParent(folderName).FullName.Length);
+                    string extension = Path.GetExtension(fileInfo.FullName);
+                    int endOfName = relativePath.Length - extension.Length;
+                    uint hashID = getSR1HashName(relativePath);
+
+                    BigfileEntry newEntry = new BigfileEntry();
+                    newEntry.FilePath = fileInfo.FullName;
+                    newEntry.FileHash = hashID;
+                    newEntry.FileLength = (uint)fileInfo.Length;
+                    newEntry.FileCode.code0 = char.ToUpperInvariant(relativePath[endOfName - 4]);
+                    newEntry.FileCode.code1 = char.ToUpperInvariant(relativePath[endOfName - 3]);
+                    newEntry.FileCode.code2 = char.ToUpperInvariant(relativePath[endOfName - 2]);
+                    newEntry.FileCode.code3 = char.ToUpperInvariant(relativePath[endOfName - 1]);
+
+                    if (useCompareFile)
+                    {
+                        BigfileEntry existingEntry = _bigFileEntries.Find(x => x.FileHash == newEntry.FileHash);
+                        if (existingEntry == null)
+                        {
+                            throw new Exception("No entry found for \"" + relativePath + "\"");
+                        }
+
+                        existingEntry.FilePath = newEntry.FilePath;
+                        existingEntry.FileHash = newEntry.FileHash;
+                        existingEntry.FileLength = newEntry.FileLength;
+                        existingEntry.FileOffset = newEntry.FileOffset;
+                        existingEntry.FileCode = newEntry.FileCode;
+                    }
+                    else
+                    {
+                        _bigFileEntries.Add(newEntry);
+                    }
+                }
             }
             catch (Exception exception)
             {
-                IsValid = false;
+                _bigFileEntries.Clear();
                 Error = exception.Message;
-            }
-        }
-
-        public bool CreateBigfile(string fileName)
-        {
-            if (!IsValid)
-            {
                 return false;
             }
 
-            FileStream file = new FileStream(fileName, FileMode.Create);
-            BinaryWriter writer = new BinaryWriter(file);
-            writer.Write(_bigFileEntries.Count);
+            return true;
+        }
 
-            uint offset = 0; // Offset from start of the bigfile or start of the contained files.
-            foreach (BigfileEntry entry in _bigFileEntries)
+        public bool Save(string fileName)
+        {
+            Error = "";
+
+            try
             {
-                writer.Write(entry.FileHash);
-                writer.Write(entry.FileLength);
-                writer.Write(offset);
-                writer.Write(entry.FileCode.code);
+                if (_bigFileEntries.Count <= 0)
+                {
+                    throw new Exception("No files loaded.");
+                }
 
-                offset += entry.FileLength;
+                FileStream outputFile = new FileStream(fileName, FileMode.Create);
+                BinaryWriter writer = new BinaryWriter(outputFile);
+                writer.Write(_bigFileEntries.Count);
+
+                uint fileIndexSize = 4u + (16u * (uint)_bigFileEntries.Count);
+                fileIndexSize += 0x00000800;
+                fileIndexSize &= 0xFFFFF800;
+                uint offset = fileIndexSize;
+                foreach (BigfileEntry entry in _bigFileEntries)
+                {
+                    writer.Write(entry.FileHash);
+                    writer.Write(entry.FileLength);
+                    writer.Write(offset);
+                    writer.Write(entry.FileCode.code);
+
+                    offset += entry.FileLength;
+
+                    while ((offset & 0xFFFF800) != offset)
+                    {
+                        offset++;
+                    }
+                }
+
+                while (((uint)writer.BaseStream.Position & 0xFFFF800) != (uint)writer.BaseStream.Position)
+                {
+                    writer.Write('\0');
+                }
+
+                writer.Flush();
+
+                foreach (BigfileEntry entry in _bigFileEntries)
+                {
+                    FileStream inputFile = new FileStream(entry.FilePath, FileMode.Open);
+                    inputFile.CopyTo(outputFile);
+                    inputFile.Close();
+
+                    while (((uint)writer.BaseStream.Position & 0xFFFF800) != (uint)writer.BaseStream.Position)
+                    {
+                        writer.Write('\0');
+                    }
+
+                    writer.Flush();
+                }
+
+                writer.Close();
+                outputFile.Close();
             }
-            writer.Flush();
-
-            // TODO - Append the actual files here.
-
-            writer.Close();
-            file.Close();
+            catch (Exception exception)
+            {
+                Error = exception.Message;
+                return false;
+            }
 
             return true;
         }

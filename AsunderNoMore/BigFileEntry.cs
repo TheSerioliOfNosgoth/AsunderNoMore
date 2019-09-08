@@ -18,6 +18,7 @@ namespace AsunderNoMore
         public string FilePath;
         public uint FileHash;
         public uint FileLength;
+        public uint FileOffset;
         public BigfileCode FileCode;
     }
 }
