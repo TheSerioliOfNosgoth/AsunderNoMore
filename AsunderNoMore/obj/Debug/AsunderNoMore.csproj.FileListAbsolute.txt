@@ -4,3 +4,4 @@ C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\bin\Debug\AsunderNoMore
 C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\obj\Debug\AsunderNoMore.csproj.CoreCompileInputs.cache
 C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\obj\Debug\AsunderNoMore.exe
 C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\obj\Debug\AsunderNoMore.pdb
+C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\bin\Debug\Hashes-SR1.txt

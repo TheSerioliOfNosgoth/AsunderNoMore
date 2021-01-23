@@ -7,50 +7,44 @@ namespace AsunderNoMore
     {
         static void Main(string[] args)
         {
-            string outputFolderName = args.Length > 0 ? args[0] : Directory.GetCurrentDirectory();
-            if (!Directory.Exists(outputFolderName))
+            bool validArgs = (args.Length >= 2);
+            if (validArgs)
             {
-                Console.WriteLine("Error: Invalid output folder \"" + outputFolderName + "\".");
+                switch (args[0])
+                {
+                    case "-unpack":
+                    case "-u":
+                    case "-pack":
+                    case "-p":
+                        break;
+                    default:
+                        validArgs = false;
+                        break;
+                }
+            }
+
+            if (!validArgs)
+            {
+                Console.WriteLine("Error: Expected \"[-repository, -r, -archives, -a] [FOLDER NAME]\"");
                 return;
             }
 
-            string inputFolderName = args.Length > 1 ? args[1] : Path.Combine(outputFolderName, "kain2");
-            if (!Directory.Exists(inputFolderName))
+            if (!Directory.Exists(args[1]))
             {
-                Console.WriteLine("Error: Invalid input folder \"" + inputFolderName + "\".");
+                Console.WriteLine("Error: Invalid project folder \"" + args[1] + "\".");
                 return;
             }
 
-            string compareFolderName = args.Length > 2 ? args[2] : Path.Combine(outputFolderName, "compare");
-            if (!Directory.Exists(compareFolderName))
+            Repository repository = new Repository(args[1]);
+
+            if (args[0] == "-unpack" || args[0] == "-u")
             {
-                Console.WriteLine("Error: Invalid compare folder \"" + compareFolderName + "\".");
-                return;
+                repository.UnpackRepository();
             }
-
-            string compareBigfileName = Path.Combine(compareFolderName, "bigfile.dat");
-            if (!File.Exists(compareBigfileName))
+            else if (args[0] == "-pack" || args[0] == "-p")
             {
-                Console.WriteLine("Error: Invalid compare bigfile \"" + compareBigfileName + "\".");
-                return;
+                repository.PackRepositors();
             }
-
-            Bigfile bigfile = new Bigfile();
-
-            if (!bigfile.Import(inputFolderName, compareBigfileName))
-            {
-                Console.WriteLine("Error importing files: \"" + bigfile.Error + "\".");
-                return;
-            }
-
-            string bigfileName = Path.Combine(outputFolderName, "bigfile.dat");
-            if (!bigfile.Save(bigfileName))
-            {
-                Console.WriteLine("Error saving bigfile: \"" + bigfile.Error + "\".");
-                return;
-            }
-
-            Console.WriteLine("Packed \"" + bigfileName + "\".");
         }
     }
 }
