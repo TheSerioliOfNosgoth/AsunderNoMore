@@ -1,8 +1,0 @@
-C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\bin\Release\AsunderNoMore.exe.config
-C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\bin\Release\AsunderNoMore.exe
-C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\bin\Release\AsunderNoMore.pdb
-C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\obj\Release\AsunderNoMore.csprojAssemblyReference.cache
-C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\obj\Release\AsunderNoMore.csproj.CoreCompileInputs.cache
-C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\obj\Release\AsunderNoMore.exe
-C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\obj\Release\AsunderNoMore.pdb
-C:\Users\Andrew\source\repos\AsunderNoMore\AsunderNoMore\bin\Release\Hashes-SR1.txt

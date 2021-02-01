@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace AsunderNoMore
 {
@@ -17,6 +18,9 @@ namespace AsunderNoMore
 
         string _sourceBigfileName;
         string _sourceTexturesFileName;
+        string _levelsFileName;
+        string _introsFileName;
+        string _allClipsFileName;
 
         string _outputBigFileName;
 
@@ -41,6 +45,22 @@ namespace AsunderNoMore
             return builder.ToString();
         }
 
+        public static String CleanName(String name)
+        {
+            if (name == null)
+            {
+                return "";
+            }
+
+            int index = name.IndexOfAny(new char[] { '\0' });
+            if (index >= 0)
+            {
+                name = name.Substring(0, index);
+            }
+
+            return name.Trim();
+        }
+
         public Repository(string projectFolderName)
         {
             _projectFolderName = projectFolderName;
@@ -51,6 +71,9 @@ namespace AsunderNoMore
 
             _sourceBigfileName = Path.Combine(projectFolderName, "bigfile.dat");
             _sourceTexturesFileName = Path.Combine(projectFolderName, "textures.big");
+            _levelsFileName = Path.Combine(projectFolderName, "levels.json");
+            _introsFileName = Path.Combine(projectFolderName, "intros.json");
+            _allClipsFileName = Path.Combine(projectFolderName, "allSFX.pmf");
 
             _outputBigFileName = Path.Combine(_outputFolderName, "bigfile.dat");
         }
@@ -231,8 +254,14 @@ namespace AsunderNoMore
             try
             {
                 FileStream sourceDataFile = new FileStream(_sourceBigfileName, FileMode.Open, FileAccess.Read);
+                LevelSet levelData = new LevelSet();
+                IntroSet introData = new IntroSet();
 
                 CreateDirectories();
+
+                List<int> sfxIDs = new List<int>();
+                FileStream allClipsFile = new FileStream(_allClipsFileName, FileMode.Create, FileAccess.ReadWrite);
+                allClipsFile.Write(new byte[16], 0, 16);
 
                 foreach (BigfileEntry entry in _bigFileEntries)
                 {
@@ -246,9 +275,99 @@ namespace AsunderNoMore
                     outputFile.Flush();
 
                     string ext = Path.GetExtension(outputFileName);
-                    if (Path.GetExtension(outputFileName) == ".pmf")
+                    if (ext == ".pcm")
                     {
-                        BinaryReader reader = new BinaryReader(outputFile);
+                        BinaryReader reader = new BinaryReader(outputFile, System.Text.Encoding.ASCII);
+                        reader.BaseStream.Position = 0;
+
+                        UInt32 dataStart = ((reader.ReadUInt32() >> 9) << 11) + 0x00000800;
+
+                        bool isUnit = (reader.ReadUInt32() == 0x00000000);
+                        if (isUnit)
+                        {
+                            Level level = new Level();
+
+                            reader.BaseStream.Position = dataStart + 0x98;
+                            reader.BaseStream.Position = dataStart + reader.ReadUInt32();
+                            level.UnitName = CleanName(new string(reader.ReadChars(8)));
+
+                            #region Events
+                            /*reader.BaseStream.Position = dataStart + 0xDC;
+                            uint eventPointersOffset = reader.ReadUInt16();
+                            reader.BaseStream.Position = dataStart + eventPointersOffset;
+                            int numPuzzles = reader.ReadInt32();
+                            for (int p = 0; p < numPuzzles; p++)
+                            {
+                                uint eventOffset = reader.ReadUInt32();
+                                uint nextEventPointer = (uint)reader.BaseStream.Position;
+
+                                reader.BaseStream.Position = dataStart + eventOffset;
+                                reader.BaseStream.Position += 0x02;
+
+                                short numInstances = reader.ReadInt16();
+                                reader.BaseStream.Position += 0x0C;
+
+                                for (int i = 0; i < 0; i++)
+                                {
+                                    uint instanceOffset = reader.ReadUInt32();
+                                    uint nextInstancePointer = (uint)reader.BaseStream.Position;
+
+                                    reader.BaseStream.Position = dataStart + instanceOffset;
+                                    short eventType = reader.ReadInt16();
+                                    // Do EventInstance stuff here.
+
+                                    reader.BaseStream.Position = nextInstancePointer;
+                                }
+                                
+
+                                reader.BaseStream.Position = nextEventPointer;
+                            }*/
+                            #endregion
+
+                            reader.BaseStream.Position = dataStart + 0xF8;
+                            level.StreamUnitID = reader.ReadInt32();
+
+                            if (level.StreamUnitID > levelData.MaxID)
+                            {
+                                levelData.MaxID = level.StreamUnitID;
+                            }
+
+                            levelData.Add(level);
+
+                            #region Instances
+                            reader.BaseStream.Position = dataStart + 0x78;
+                            uint instanceCount = reader.ReadUInt32();
+                            uint instanceStart = dataStart + reader.ReadUInt32();
+                            for (int i = 0; i < instanceCount; i++)
+                            {
+                                Intro intro = new Intro();
+                                reader.BaseStream.Position = instanceStart + 0x4C * i;
+                                intro.ObjectName = CleanName(new String(reader.ReadChars(16)));
+                                intro.UnitName = level.UnitName;
+                                intro.StreamUnitID = level.StreamUnitID;
+                                reader.BaseStream.Position += 4;
+                                intro.IntroUniqueID = reader.ReadInt32();
+                                intro.Rotation.X = reader.ReadInt16();
+                                intro.Rotation.Y = reader.ReadInt16();
+                                intro.Rotation.Z = reader.ReadInt16();
+                                reader.BaseStream.Position += 4;
+                                intro.Position.X = reader.ReadInt16();
+                                intro.Position.Y = reader.ReadInt16();
+                                intro.Position.Z = reader.ReadInt16();
+
+                                if (intro.IntroUniqueID > introData.MaxID)
+                                {
+                                    introData.MaxID = intro.IntroUniqueID;
+                                }
+
+                                introData.Add(intro);
+                            }
+                            #endregion
+                        }
+                    }
+                    else if (ext == ".pmf")
+                    {
+                        BinaryReader reader = new BinaryReader(outputFile, System.Text.Encoding.ASCII);
                         reader.BaseStream.Position = 0;
 
                         uint header = reader.ReadUInt32();
@@ -278,10 +397,18 @@ namespace AsunderNoMore
                                 byte[] s256Hash = s256.ComputeHash(clipBuffer);
                                 string s256String = ByteArrayToHexString(s256Hash);
 
-                                string outputClipFileName = Path.Combine(_sfxFolderName, "clip-" + sfxID + "-" + waveID + "-" + s256String + ".sfx");
+                                //string outputClipFileName = Path.Combine(_sfxFolderName, "clip-" + sfxID + "-" + waveID + "-" + s256String + ".sfx");
+                                string outputClipFileName = Path.Combine(_sfxFolderName, "clip-" + sfxID + ".sfx");
                                 FileStream outputClipFile = new FileStream(outputClipFileName, FileMode.Create);
                                 outputClipFile.Write(clipBuffer, 0, clipBuffer.Length);
                                 outputClipFile.Close();
+
+                                if (!sfxIDs.Contains(sfxID))
+                                {
+                                    sfxIDs.Add(sfxID);
+                                }
+
+                                allClipsFile.Write(clipBuffer, 0, clipBuffer.Length);
 
                                 Console.WriteLine("\tExtracted clip: \"" + outputClipFileName + "\"");
 
@@ -289,13 +416,27 @@ namespace AsunderNoMore
                             }
                         }
                     }
-
                     outputFile.Close();
 
                     Console.WriteLine("Extracted file: \"" + outputFileName + "\"");
                 }
 
                 sourceDataFile.Close();
+
+                allClipsFile.Position = 0;
+                allClipsFile.Write(BitConverter.GetBytes(0x61504D46), 0, 4);
+                allClipsFile.Write(BitConverter.GetBytes((short)256), 0, 2);
+                allClipsFile.Write(BitConverter.GetBytes((short)0), 0, 2);
+                allClipsFile.Write(BitConverter.GetBytes((short)sfxIDs.Count), 0, 2);
+                allClipsFile.Write(BitConverter.GetBytes((short)0), 0, 2);
+                allClipsFile.Write(BitConverter.GetBytes(0x00000000), 0, 4);
+                allClipsFile.Close();
+
+                string introsFileData = JsonSerializer.Serialize(introData, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(_introsFileName, introsFileData, Encoding.ASCII);
+
+                string levelsFileData = JsonSerializer.Serialize(levelData, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(_levelsFileName, levelsFileData, Encoding.ASCII);
 
                 Console.WriteLine("Extracted " + _bigFileEntries.Count.ToString() + " files from \"" + _sourceBigfileName + "\".");
             }
