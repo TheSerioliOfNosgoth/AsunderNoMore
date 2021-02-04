@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,6 +11,10 @@ namespace AsunderNoMore
 {
     class Repository
     {
+        const int textureWidth = 256;
+        const int textureHeight = 256;
+        const int headerLength = 4096;
+
         string _projectFolderName;
         string _dataFolderName;
         string _textureFolderName;
@@ -18,13 +23,16 @@ namespace AsunderNoMore
 
         string _sourceBigfileName;
         string _sourceTexturesFileName;
+
+        string _assetsFileName;
         string _levelsFileName;
         string _introsFileName;
+        string _clipsFileName;
         string _allClipsFileName;
+        string _texturesFileName;
 
         string _outputBigFileName;
-
-        List<BigfileEntry> _bigFileEntries = new List<BigfileEntry>();
+        string _outputTexturesFileName;
 
         void CopyTo(Stream destination, Stream source, int length)
         {
@@ -71,11 +79,16 @@ namespace AsunderNoMore
 
             _sourceBigfileName = Path.Combine(projectFolderName, "bigfile.dat");
             _sourceTexturesFileName = Path.Combine(projectFolderName, "textures.big");
+
+            _assetsFileName = Path.Combine(projectFolderName, "assets.json");
             _levelsFileName = Path.Combine(projectFolderName, "levels.json");
             _introsFileName = Path.Combine(projectFolderName, "intros.json");
+            _clipsFileName = Path.Combine(projectFolderName, "clips.json");
             _allClipsFileName = Path.Combine(projectFolderName, "allSFX.pmf");
+            _texturesFileName = Path.Combine(projectFolderName, "textures.json");
 
             _outputBigFileName = Path.Combine(_outputFolderName, "bigfile.dat");
+            _outputTexturesFileName = Path.Combine(_outputFolderName, "textures.big");
         }
 
         void CreateDirectories()
@@ -126,14 +139,14 @@ namespace AsunderNoMore
             return true;
         }
 
-        bool LoadBigfileEntries()
+        bool LoadBigfileEntries(AssetDescSet assets)
         {
             if (!LoadHashTable(out Hashtable hashTable))
             {
                 return false;
             }
 
-            _bigFileEntries.Clear();
+            assets.Clear();
 
             try
             {
@@ -143,11 +156,11 @@ namespace AsunderNoMore
                 uint entryCount = reader.ReadUInt32();
                 while (entryCount > 0)
                 {
-                    BigfileEntry entry = new BigfileEntry();
+                    AssetDesc entry = new AssetDesc();
                     entry.FileHash = reader.ReadUInt32();
                     entry.FileLength = reader.ReadUInt32();
                     entry.FileOffset = reader.ReadUInt32();
-                    entry.FileCode.code = reader.ReadUInt32();
+                    entry.Code.code = reader.ReadUInt32();
 
                     string hashString = string.Format("{0:X8}", entry.FileHash);
                     if (hashTable.Contains(hashString))
@@ -155,7 +168,7 @@ namespace AsunderNoMore
                         entry.FilePath = (string)hashTable[hashString];
                     }
 
-                    _bigFileEntries.Add(entry);
+                    assets.Add(entry);
 
                     entryCount--;
                 }
@@ -165,7 +178,7 @@ namespace AsunderNoMore
             }
             catch (Exception)
             {
-                _bigFileEntries.Clear();
+                assets.Clear();
                 Console.WriteLine("Error: Couldn't load bigfile entries.");
                 return false;
             }
@@ -173,13 +186,8 @@ namespace AsunderNoMore
             return true;
         }
 
-        bool GenerateBigFileEntries()
+        bool GenerateBigFileEntries(AssetDescSet assets)
         {
-            if (!LoadBigfileEntries())
-            {
-                return false;
-            }
-
             try
             {
                 DirectoryInfo directoryInfo = new DirectoryInfo(_dataFolderName);
@@ -199,32 +207,32 @@ namespace AsunderNoMore
 
                     // There may be more than one file with the same hash ID in the source bigfile.
                     // Update the sizes for all of them.
-                    List<BigfileEntry> existingEntries = _bigFileEntries.FindAll(x => x.FileHash == hashID);
+                    List<AssetDesc> existingEntries = assets.FindAll(x => x.FileHash == hashID);
                     if (existingEntries != null)
                     {
-                        foreach (BigfileEntry existingEntry in existingEntries)
+                        foreach (AssetDesc existingEntry in existingEntries)
                         {
                             existingEntry.FileLength = (uint)fileInfo.Length;
                         }
                     }
                     else
                     {
-                        BigfileEntry newEntry = new BigfileEntry();
+                        AssetDesc newEntry = new AssetDesc();
                         newEntry.FilePath = relativePath;
                         newEntry.FileHash = hashID;
                         newEntry.FileLength = (uint)fileInfo.Length;
-                        newEntry.FileCode.code0 = char.ToUpperInvariant(relativePath[endOfName - 4]);
-                        newEntry.FileCode.code1 = char.ToUpperInvariant(relativePath[endOfName - 3]);
-                        newEntry.FileCode.code2 = char.ToUpperInvariant(relativePath[endOfName - 2]);
-                        newEntry.FileCode.code3 = char.ToUpperInvariant(relativePath[endOfName - 1]);
+                        newEntry.Code.code0 = char.ToUpperInvariant(relativePath[endOfName - 4]);
+                        newEntry.Code.code1 = char.ToUpperInvariant(relativePath[endOfName - 3]);
+                        newEntry.Code.code2 = char.ToUpperInvariant(relativePath[endOfName - 2]);
+                        newEntry.Code.code3 = char.ToUpperInvariant(relativePath[endOfName - 1]);
 
-                        _bigFileEntries.Add(newEntry);
+                        assets.Add(newEntry);
                     }
                 }
             }
             catch (Exception)
             {
-                _bigFileEntries.Clear();
+                assets.Clear();
                 Console.WriteLine("Error: Couldn't generate bigfile entries.");
                 return false;
             }
@@ -246,16 +254,21 @@ namespace AsunderNoMore
                 return false;
             }
 
-            if (!LoadBigfileEntries())
-            {
-                return false;
-            }
-
             try
             {
-                FileStream sourceDataFile = new FileStream(_sourceBigfileName, FileMode.Open, FileAccess.Read);
+                FileStream sourceBigFile = new FileStream(_sourceBigfileName, FileMode.Open, FileAccess.Read);
+                FileStream sourceTexturesFile = new FileStream(_sourceTexturesFileName, FileMode.Open, FileAccess.Read);
+
+                AssetDescSet assetData = new AssetDescSet();
                 LevelSet levelData = new LevelSet();
                 IntroSet introData = new IntroSet();
+                SFXClipSet clipData = new SFXClipSet();
+                TexDescSet textureData = new TexDescSet();
+
+                if (!LoadBigfileEntries(assetData))
+                {
+                    return false;
+                }
 
                 CreateDirectories();
 
@@ -263,15 +276,16 @@ namespace AsunderNoMore
                 FileStream allClipsFile = new FileStream(_allClipsFileName, FileMode.Create, FileAccess.ReadWrite);
                 allClipsFile.Write(new byte[16], 0, 16);
 
-                foreach (BigfileEntry entry in _bigFileEntries)
+                #region Bigfile
+                foreach (AssetDesc entry in assetData.Assets)
                 {
-                    sourceDataFile.Position = entry.FileOffset;
+                    sourceBigFile.Position = entry.FileOffset;
 
                     string outputFileName = Path.Combine(_projectFolderName, entry.FilePath);
                     string outputFileDirectory = Path.GetDirectoryName(outputFileName);
                     Directory.CreateDirectory(outputFileDirectory);
                     FileStream outputFile = new FileStream(outputFileName, FileMode.Create, FileAccess.ReadWrite);
-                    CopyTo(outputFile, sourceDataFile, (int)entry.FileLength);
+                    CopyTo(outputFile, sourceBigFile, (int)entry.FileLength);
                     outputFile.Flush();
 
                     string ext = Path.GetExtension(outputFileName);
@@ -405,6 +419,11 @@ namespace AsunderNoMore
 
                                 if (!sfxIDs.Contains(sfxID))
                                 {
+                                    SFXClip clip = new SFXClip();
+                                    clip.SFXID = sfxID;
+                                    clip.SFXName = "clip-" + sfxID;
+                                    clipData.Add(clip);
+
                                     sfxIDs.Add(sfxID);
                                 }
 
@@ -420,8 +439,33 @@ namespace AsunderNoMore
 
                     Console.WriteLine("Extracted file: \"" + outputFileName + "\"");
                 }
+                #endregion
 
-                sourceDataFile.Close();
+                #region Textures
+                BinaryReader texturesReader = new BinaryReader(sourceTexturesFile);
+                texturesReader.BaseStream.Position = headerLength;
+                uint fileLength = (uint)sourceTexturesFile.Length;
+                uint totalTextures = (uint)((fileLength - (long)headerLength) / (long)(textureWidth * textureHeight * 2) - 1);
+                for (int t = 0; t <= totalTextures; t++)
+                {
+                    string textureName = "texture-" + zeroFill(t.ToString(), 5) + ".png";
+                    string outputFileName = Path.Combine(_textureFolderName, textureName);
+                    string relativePath = outputFileName.Substring(_projectFolderName.Length);
+
+                    TexDesc texDesc = new TexDesc();
+                    texDesc.TextureIndex = textureData.Count;
+                    texDesc.FilePath = relativePath;
+                    textureData.Add(texDesc);
+
+                    Bitmap tempBitmap = ReadTexture(texturesReader);
+                    tempBitmap.Save(outputFileName, System.Drawing.Imaging.ImageFormat.Png);
+                    Console.WriteLine("Extracted file: \"" + outputFileName + "\"");
+                }
+                texturesReader.Close();
+                #endregion
+
+                sourceBigFile.Close();
+                sourceTexturesFile.Close();
 
                 allClipsFile.Position = 0;
                 allClipsFile.Write(BitConverter.GetBytes(0x61504D46), 0, 4);
@@ -432,13 +476,26 @@ namespace AsunderNoMore
                 allClipsFile.Write(BitConverter.GetBytes(0x00000000), 0, 4);
                 allClipsFile.Close();
 
-                string introsFileData = JsonSerializer.Serialize(introData, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(_introsFileName, introsFileData, Encoding.ASCII);
+                string assetsFileData = JsonSerializer.Serialize(assetData, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(_assetsFileName, assetsFileData, Encoding.ASCII);
 
                 string levelsFileData = JsonSerializer.Serialize(levelData, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(_levelsFileName, levelsFileData, Encoding.ASCII);
 
-                Console.WriteLine("Extracted " + _bigFileEntries.Count.ToString() + " files from \"" + _sourceBigfileName + "\".");
+                string introsFileData = JsonSerializer.Serialize(introData, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(_introsFileName, introsFileData, Encoding.ASCII);
+
+                string clipsFileData = JsonSerializer.Serialize(clipData, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(_clipsFileName, clipsFileData, Encoding.ASCII);
+
+                string texturesFileData = JsonSerializer.Serialize(textureData, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(_texturesFileName, texturesFileData, Encoding.ASCII);
+
+                Console.WriteLine("Extracted " + assetData.Count.ToString() + " files from \"" + _sourceBigfileName + "\".");
+                Console.WriteLine("Extracted " + textureData.Count.ToString() + " files from \"" + _sourceTexturesFileName + "\".");
+                Console.WriteLine("Discovered " + levelData.Count + " unique levels.");
+                Console.WriteLine("Discovered " + introData.Count + " unique intros.");
+                Console.WriteLine("Discovered " + clipData.Count + " unique clips.");
             }
             catch (Exception)
             {
@@ -449,7 +506,7 @@ namespace AsunderNoMore
             return true;
         }
 
-        public bool PackRepositors()
+        public bool PackRepository()
         {
             if (!Directory.Exists(_dataFolderName))
             {
@@ -487,32 +544,47 @@ namespace AsunderNoMore
                 return false;
             }
 
-            if (!GenerateBigFileEntries())
+            if (!File.Exists(_assetsFileName))
             {
+                Console.WriteLine("Error: Cannot find asset file \"" + _assetsFileName + "\".");
+                return false;
+            }
+
+            if (!File.Exists(_texturesFileName))
+            {
+                Console.WriteLine("Error: Cannot find texture file \"" + _texturesFileName + "\".");
                 return false;
             }
 
             try
             {
-                if (_bigFileEntries.Count <= 0)
-                {
-                    throw new Exception("No files loaded.");
-                }
+                FileStream outputBigFile = new FileStream(_outputBigFileName, FileMode.Create);
+                FileStream outputTexturesFile = new FileStream(_outputTexturesFileName, FileMode.Create);
 
-                FileStream outputFile = new FileStream(_outputBigFileName, FileMode.Create);
-                BinaryWriter writer = new BinaryWriter(outputFile);
-                writer.Write(_bigFileEntries.Count);
+                string assetsFileData = File.ReadAllText(_assetsFileName, Encoding.ASCII);
+                AssetDescSet assetData = (AssetDescSet)JsonSerializer.Deserialize(assetsFileData, typeof(AssetDescSet));
+                //if (!GenerateBigFileEntries(assetData))
+                //{
+                //    return false;
+                //}
 
-                uint fileIndexSize = 4u + (16u * (uint)_bigFileEntries.Count);
+                string texturesFileData = File.ReadAllText(_texturesFileName, Encoding.ASCII);
+                TexDescSet textureData = (TexDescSet)JsonSerializer.Deserialize(texturesFileData, typeof(TexDescSet));
+
+                #region Bigfile
+                BinaryWriter bigFileWriter = new BinaryWriter(outputBigFile);
+                bigFileWriter.Write(assetData.Count);
+
+                uint fileIndexSize = 4u + (16u * (uint)assetData.Count);
                 fileIndexSize += 0x00000800;
                 fileIndexSize &= 0xFFFFF800;
                 uint offset = fileIndexSize;
-                foreach (BigfileEntry entry in _bigFileEntries)
+                foreach (AssetDesc entry in assetData.Assets)
                 {
-                    writer.Write(entry.FileHash);
-                    writer.Write(entry.FileLength);
-                    writer.Write(offset);
-                    writer.Write(entry.FileCode.code);
+                    bigFileWriter.Write(entry.FileHash);
+                    bigFileWriter.Write(entry.FileLength);
+                    bigFileWriter.Write(offset);
+                    bigFileWriter.Write(entry.Code.code);
 
                     offset += entry.FileLength;
 
@@ -522,34 +594,51 @@ namespace AsunderNoMore
                     }
                 }
 
-                while (((uint)writer.BaseStream.Position & 0xFFFF800) != (uint)writer.BaseStream.Position)
+                while (((uint)bigFileWriter.BaseStream.Position & 0xFFFF800) != (uint)bigFileWriter.BaseStream.Position)
                 {
-                    writer.Write('\0');
+                    bigFileWriter.Write('\0');
                 }
 
-                writer.Flush();
+                bigFileWriter.Flush();
 
-                foreach (BigfileEntry entry in _bigFileEntries)
+                foreach (AssetDesc entry in assetData.Assets)
                 {
                     string inputFileName = Path.Combine(_projectFolderName, entry.FilePath);
                     FileStream inputFile = new FileStream(inputFileName, FileMode.Open, FileAccess.Read);
-                    CopyTo(outputFile, inputFile, (int)inputFile.Length);
+                    CopyTo(outputBigFile, inputFile, (int)inputFile.Length);
                     inputFile.Close();
 
-                    Console.WriteLine("Added file: \"" + entry.FilePath + "\"");
+                    Console.WriteLine("Added file: \"" + inputFileName + "\"");
 
-                    while (((uint)writer.BaseStream.Position & 0xFFFF800) != (uint)writer.BaseStream.Position)
+                    while (((uint)bigFileWriter.BaseStream.Position & 0xFFFF800) != (uint)bigFileWriter.BaseStream.Position)
                     {
-                        writer.Write('\0');
+                        bigFileWriter.Write('\0');
                     }
 
-                    writer.Flush();
+                    bigFileWriter.Flush();
                 }
+                #endregion
 
-                writer.Close();
-                outputFile.Close();
+                #region Textures
+                BinaryWriter texturesWriter = new BinaryWriter(outputTexturesFile);
+                texturesWriter.Write((ushort)512);
+                texturesWriter.Write((ushort)textureData.Count);
+                texturesWriter.Write(new byte[headerLength - 4]);
+                uint totalTextures = (uint)textureData.Count - 1;
+                for (int t = 0; t <= totalTextures; t++)
+                {
+                    string inputFileName = Path.Combine(_projectFolderName, textureData.Textures[t].FilePath);
+                    Bitmap tempBitmap = new Bitmap(inputFileName);
+                    WriteTexture(texturesWriter, tempBitmap);
+                    Console.WriteLine("Added file: \"" + inputFileName + "\"");
+                }
+                #endregion
 
-                Console.WriteLine("Packed " + _bigFileEntries.Count.ToString() + " files into \"" + _outputBigFileName + "\".");
+                bigFileWriter.Close();
+                outputBigFile.Close();
+
+                Console.WriteLine("Packed " + assetData.Count.ToString() + " files into \"" + _outputBigFileName + "\".");
+                Console.WriteLine("Packed " + textureData.Count.ToString() + " files into \"" + _outputTexturesFileName + "\".");
             }
             catch (Exception)
             {
@@ -604,6 +693,93 @@ namespace AsunderNoMore
             hashName <<= 0x03;
             hashName |= extID;
             return (uint)hashName;
+        }
+
+        string zeroFill(string origVal, int length)
+        {
+            string retString;
+
+            retString = origVal;
+
+            do
+                retString = "0" + retString;
+            while (retString.Length < length);
+
+            return retString;
+        }
+
+        Bitmap ReadTexture(BinaryReader reader)
+        {
+            int rFactor = 3;
+            int gFactor = 3;
+            int bFactor = 3;
+
+            Bitmap retBitmap = new Bitmap(textureWidth, textureHeight);
+
+            for (int iGT = 0; iGT < textureHeight; iGT++)
+            {
+                for (int jGT = 0; jGT < textureWidth; jGT++)
+                {
+                    ushort pixelData = reader.ReadUInt16();
+                    ushort a = pixelData;
+                    ushort r = pixelData;
+                    ushort g = pixelData;
+                    ushort b = pixelData;
+
+                    //separate out the channels
+                    a >>= 15;
+
+                    r <<= 1;
+                    r >>= 11;
+
+                    g <<= 6;
+                    g >>= 11;
+
+                    b <<= 11;
+                    b >>= 11;
+
+                    if (a > 0)
+                    {
+                        a = (ushort)255;
+                    }
+                    r = (ushort)(r << rFactor);
+                    g = (ushort)(g << gFactor);
+                    b = (ushort)(b << bFactor);
+
+                    Color colour = Color.FromArgb(a, r, g, b);
+                    retBitmap.SetPixel(jGT, iGT, colour);
+                }
+            }
+
+            return retBitmap;
+        }
+
+        void WriteTexture(BinaryWriter writer, Bitmap bitmap)
+        {
+            int aFactor = 1;
+            int rFactor = 3;
+            int gFactor = 3;
+            int bFactor = 3;
+
+            for (int iGT = 0; iGT < textureHeight; iGT++)
+            {
+                for (int jGT = 0; jGT < textureWidth; jGT++)
+                {
+                    Color colour = bitmap.GetPixel(jGT, iGT);
+                    ushort a = (ushort)(colour.A >> aFactor);
+                    ushort r = (ushort)(colour.R >> rFactor);
+                    ushort g = (ushort)(colour.G >> gFactor);
+                    ushort b = (ushort)(colour.B >> bFactor);
+
+                    a <<= 15;
+                    r <<= 10;
+                    g <<= 5;
+
+                    ushort pixelData = (ushort)(a | r | g | b);
+
+                    writer.Write(pixelData);
+                }
+            }
         }
     }
 }

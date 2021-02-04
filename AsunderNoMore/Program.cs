@@ -43,8 +43,10 @@ namespace AsunderNoMore
             }
             else if (args[0] == "-pack" || args[0] == "-p")
             {
-                repository.PackRepositors();
+                repository.PackRepository();
             }
+
+            Console.ReadLine();
         }
     }
 }

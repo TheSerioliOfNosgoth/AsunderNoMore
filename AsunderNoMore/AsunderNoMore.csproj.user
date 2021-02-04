@@ -3,6 +3,6 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
     <StartWorkingDirectory>
     </StartWorkingDirectory>
-    <StartArguments>-u C:\SR1\</StartArguments>
+    <StartArguments>-p C:\SR1\</StartArguments>
   </PropertyGroup>
 </Project>

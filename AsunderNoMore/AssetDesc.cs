@@ -13,12 +13,14 @@ namespace AsunderNoMore
         [FieldOffset(0)] public uint code;
     }
 
-    class BigfileEntry
+    class AssetDesc
     {
-        public string FilePath;
-        public uint FileHash;
-        public uint FileLength;
-        public uint FileOffset;
-        public BigfileCode FileCode;
+        public string FilePath { get; set; } = "";
+        public uint FileHash { get; set; } = 0;
+        public uint FileLength { get; set; } = 0;
+        public uint FileOffset { get; set; } = 0;
+        public uint FileCode { get { return Code.code; } set { Code.code = value; } }
+
+        public BigfileCode Code;
     }
 }
