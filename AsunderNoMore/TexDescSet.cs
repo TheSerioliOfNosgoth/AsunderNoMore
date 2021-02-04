@@ -26,5 +26,10 @@ namespace AsunderNoMore
         {
             _TexDescList.Clear();
         }
+
+        public List<TexDesc> FindAll(Predicate<TexDesc> match)
+        {
+            return _TexDescList.FindAll(match);
+        }
     }
 }

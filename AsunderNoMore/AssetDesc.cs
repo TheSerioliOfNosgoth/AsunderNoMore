@@ -18,8 +18,10 @@ namespace AsunderNoMore
         public string FilePath { get; set; } = "";
         public uint FileHash { get; set; } = 0;
         public uint FileLength { get; set; } = 0;
-        public uint FileOffset { get; set; } = 0;
+        public int FileIndex { get; set; } = 0;
         public uint FileCode { get { return Code.code; } set { Code.code = value; } }
+
+        public uint FileOffset = 0;
 
         public BigfileCode Code;
     }

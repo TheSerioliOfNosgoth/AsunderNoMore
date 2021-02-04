@@ -175,6 +175,21 @@ namespace AsunderNoMore
 
                 reader.Close();
                 sourceFile.Close();
+
+                // Sort by offsets.
+                SortedList<uint, AssetDesc> sortedAssets = new SortedList<uint, AssetDesc>();
+                foreach (AssetDesc asset in assets.Assets)
+                {
+                    sortedAssets.Add(asset.FileOffset, asset);
+                }
+
+                // Fill indices according to their offset.
+                int assetIndex = 0;
+                foreach (AssetDesc asset in sortedAssets.Values)
+                {
+                    asset.FileIndex = assetIndex;
+                    assetIndex++;
+                }
             }
             catch (Exception)
             {
@@ -186,7 +201,7 @@ namespace AsunderNoMore
             return true;
         }
 
-        bool GenerateBigFileEntries(AssetDescSet assets)
+        bool AddAdditionalAssets(AssetDescSet assets)
         {
             try
             {
@@ -225,6 +240,7 @@ namespace AsunderNoMore
                         newEntry.Code.code1 = char.ToUpperInvariant(relativePath[endOfName - 3]);
                         newEntry.Code.code2 = char.ToUpperInvariant(relativePath[endOfName - 2]);
                         newEntry.Code.code3 = char.ToUpperInvariant(relativePath[endOfName - 1]);
+                        newEntry.FileIndex = assets.Count;
 
                         assets.Add(newEntry);
                     }
@@ -234,6 +250,50 @@ namespace AsunderNoMore
             {
                 assets.Clear();
                 Console.WriteLine("Error: Couldn't generate bigfile entries.");
+                return false;
+            }
+
+            return true;
+        }
+
+        bool AddAdditionalTextures(TexDescSet textures)
+        {
+            try
+            {
+                DirectoryInfo directoryInfo = new DirectoryInfo(_textureFolderName);
+                FileInfo[] fileInfos = directoryInfo.GetFiles("*.png", SearchOption.TopDirectoryOnly);
+                System.Text.RegularExpressions.Regex regex = new System.Text.RegularExpressions.Regex("Texture-([0-9]+).(png)");
+
+                if (fileInfos.Length <= 0)
+                {
+                    throw new Exception("No files in \"" + _textureFolderName + "\".");
+                }
+
+                foreach (FileInfo fileInfo in fileInfos)
+                {
+                    if (regex.IsMatch(fileInfo.Name))
+                    {
+                        string relativePath = fileInfo.FullName.Substring(_projectFolderName.Length);
+                        string[] tokens = regex.Split(fileInfo.Name);
+                        if (tokens.Length == 4 && Int32.TryParse(tokens[1], out int index))
+                        {
+                            List<TexDesc> existingEntries = textures.FindAll(x => x.TextureIndex == index);
+                            if (existingEntries == null)
+                            {
+                                TexDesc newEntry = new TexDesc();
+                                newEntry.FilePath = relativePath;
+                                newEntry.TextureIndex = textures.Count;
+
+                                textures.Add(newEntry);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                textures.Clear();
+                Console.WriteLine("Error: Couldn't add additional textures.");
                 return false;
             }
 
@@ -256,9 +316,6 @@ namespace AsunderNoMore
 
             try
             {
-                FileStream sourceBigFile = new FileStream(_sourceBigfileName, FileMode.Open, FileAccess.Read);
-                FileStream sourceTexturesFile = new FileStream(_sourceTexturesFileName, FileMode.Open, FileAccess.Read);
-
                 AssetDescSet assetData = new AssetDescSet();
                 LevelSet levelData = new LevelSet();
                 IntroSet introData = new IntroSet();
@@ -271,6 +328,9 @@ namespace AsunderNoMore
                 }
 
                 CreateDirectories();
+
+                FileStream sourceBigFile = new FileStream(_sourceBigfileName, FileMode.Open, FileAccess.Read);
+                FileStream sourceTexturesFile = new FileStream(_sourceTexturesFileName, FileMode.Open, FileAccess.Read);
 
                 List<int> sfxIDs = new List<int>();
                 FileStream allClipsFile = new FileStream(_allClipsFileName, FileMode.Create, FileAccess.ReadWrite);
@@ -563,13 +623,24 @@ namespace AsunderNoMore
 
                 string assetsFileData = File.ReadAllText(_assetsFileName, Encoding.ASCII);
                 AssetDescSet assetData = (AssetDescSet)JsonSerializer.Deserialize(assetsFileData, typeof(AssetDescSet));
-                //if (!GenerateBigFileEntries(assetData))
-                //{
-                //    return false;
-                //}
+                if (!AddAdditionalAssets(assetData))
+                {
+                    return false;
+                }
 
                 string texturesFileData = File.ReadAllText(_texturesFileName, Encoding.ASCII);
                 TexDescSet textureData = (TexDescSet)JsonSerializer.Deserialize(texturesFileData, typeof(TexDescSet));
+                if (!AddAdditionalTextures(textureData))
+                {
+                    return false;
+                }
+
+                // Sort by index. Offset isn't saved.
+                SortedList<int, AssetDesc> sortedAssets = new SortedList<int, AssetDesc>();
+                foreach (AssetDesc asset in assetData.Assets)
+                {
+                    sortedAssets.Add(asset.FileIndex, asset);
+                }
 
                 #region Bigfile
                 BinaryWriter bigFileWriter = new BinaryWriter(outputBigFile);
@@ -601,7 +672,7 @@ namespace AsunderNoMore
 
                 bigFileWriter.Flush();
 
-                foreach (AssetDesc entry in assetData.Assets)
+                foreach (AssetDesc entry in sortedAssets.Values)
                 {
                     string inputFileName = Path.Combine(_projectFolderName, entry.FilePath);
                     FileStream inputFile = new FileStream(inputFileName, FileMode.Open, FileAccess.Read);
