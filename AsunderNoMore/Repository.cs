@@ -566,7 +566,7 @@ namespace AsunderNoMore
             return true;
         }
 
-        public bool PackRepository()
+        public bool PackRepository(bool forceAllFiles = false)
         {
             if (!Directory.Exists(_dataFolderName))
             {
@@ -623,14 +623,14 @@ namespace AsunderNoMore
 
                 string assetsFileData = File.ReadAllText(_assetsFileName, Encoding.ASCII);
                 AssetDescSet assetData = (AssetDescSet)JsonSerializer.Deserialize(assetsFileData, typeof(AssetDescSet));
-                if (!AddAdditionalAssets(assetData))
+                if (forceAllFiles && !AddAdditionalAssets(assetData))
                 {
                     return false;
                 }
 
                 string texturesFileData = File.ReadAllText(_texturesFileName, Encoding.ASCII);
                 TexDescSet textureData = (TexDescSet)JsonSerializer.Deserialize(texturesFileData, typeof(TexDescSet));
-                if (!AddAdditionalTextures(textureData))
+                if (forceAllFiles && !AddAdditionalTextures(textureData))
                 {
                     return false;
                 }
